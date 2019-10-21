@@ -31,7 +31,7 @@ var svg = d3.select("body").append("svg")
     .attr("height", height);
 
 queue()
-    .defer(d3.json, "/mbostock/raw/4090846/us.json")
+    .defer(d3.json, "https://gist.githubusercontent.com/mbostock/4090846/raw/us.json")
     .defer(d3.tsv, "coastal-counties.tsv")
     .await(ready);
 
