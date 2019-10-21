@@ -2,97 +2,78 @@
 <meta charset="utf-8">
 <style>
 
-.background {
-  fill: none;
-  pointer-events: all;
-}
-
-#states {
-  fill: #aaa;
-}
-
-#states .active {
-  fill: orange;
-}
-
-#state-borders {
-  fill: none;
-  stroke: #fff;
-  stroke-width: 1.5px;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  pointer-events: none;
+body {
+  background: #222;
 }
 
 </style>
 <body>
 <script src="//d3js.org/d3.v3.min.js"></script>
 <script src="//d3js.org/topojson.v1.min.js"></script>
+<script src="//d3js.org/queue.v1.min.js"></script>
 <script>
 
-var width = 1500,
-    height = 1000,
-    centered;
+var width = 960,
+    height = 500;
 
 var projection = d3.geo.albersUsa()
-    .scale(1070)
     .translate([width / 2, height / 2]);
 
 var path = d3.geo.path()
     .projection(projection);
 
+var color = d3.scale.ordinal()
+    .domain(d3.range(9).reverse())
+    .range(["#ffffd9","#edf8b1","#c7e9b4","#7fcdbb","#41b6c4","#1d91c0","#225ea8","#253494","#081d58"]);
+
 var svg = d3.select("body").append("svg")
     .attr("width", width)
     .attr("height", height);
 
-svg.append("rect")
-    .attr("class", "background")
-    .attr("width", width)
-    .attr("height", height)
-    .on("click", clicked);
+queue()
+    .defer(d3.json, "/mbostock/raw/4090846/us.json")
+    .defer(d3.tsv, "coastal-counties.tsv")
+    .await(ready);
 
-var g = svg.append("g");
-
-d3.json("https://gist.githubusercontent.com/mbostock/4090846/raw/us.json", function(error, us) {
+function ready(error, us, coastals) {
   if (error) throw error;
 
-  g.append("g")
-      .attr("id", "states")
-    .selectAll("path")
-      .data(topojson.feature(us, us.objects.states).features)
-    .enter().append("path")
-      .attr("d", path)
-      .on("click", clicked);
+  var counties = topojson.feature(us, us.objects.counties),
+      neighbors = topojson.neighbors(us.objects.counties.geometries),
+      coastals = d3.set(coastals.map(function(d) { return d.id; })),
+      nexts = [],
+      nexts2 = [],
+      distance = 0;
 
-  g.append("path")
-      .datum(topojson.mesh(us, us.objects.states, function(a, b) { return a !== b; }))
-      .attr("id", "state-borders")
-      .attr("d", path);
-});
+  counties.features.forEach(function(county, i) {
+    if (coastals.has(county.id)) nexts.push(county);
+    county.distance = Infinity;
+    county.neighbors = neighbors[i].map(function(j) { return counties.features[j]; });
+  });
 
-function clicked(d) {
-  var x, y, k;
-
-  if (d && centered !== d) {
-    var centroid = path.centroid(d);
-    x = centroid[0];
-    y = centroid[1];
-    k = 4;
-    centered = d;
-  } else {
-    x = width / 2;
-    y = height / 2;
-    k = 1;
-    centered = null;
+  while (nexts.length) {
+    nexts.forEach(function(county) {
+      if (county.distance > distance) {
+        county.distance = distance;
+        county.neighbors.forEach(function(neighbor) { nexts2.push(neighbor); });
+      }
+    });
+    nexts = nexts2, nexts2 = [], ++distance;
   }
 
-  g.selectAll("path")
-      .classed("active", centered && function(d) { return d === centered; });
+  var county = svg.append("g")
+      .attr("class", "counties")
+    .selectAll("path")
+      .data(d3.nest()
+        .key(function(d) { return d.distance; })
+        .entries(counties.features)
+        .map(function(e) { return {type: "FeatureCollection", features: e.values, distance: +e.key}; }))
+    .enter().append("path")
+      .attr("d", path);
 
-  g.transition()
-      .duration(750)
-      .attr("transform", "translate(" + width / 2 + "," + height / 2 + ")scale(" + k + ")translate(" + -x + "," + -y + ")")
-      .style("stroke-width", 1.5 / k + "px");
+  d3.timer(function(elapsed) {
+    county.style("fill", function(d) { return d3.hsl(d.distance * 10 - elapsed / 10, 1, .5); });
+  });
 }
 
 </script>
